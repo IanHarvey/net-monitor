@@ -1,0 +1,17 @@
+body {
+  font-family: Verdana, Arial, sans-serif;
+  background-color: #202828;
+  color: #F0F0F0;
+}
+
+h1 {font-size: 200%; font-style: bold; text-align: center}
+
+h2 {font-size: 120%; font-style: bold; margin-left: 1em; margin-right: 1em; color:white; background-color:#553333; line-height:20pt; text-indent: 1em}
+
+h3 { text-indent: 2.0em }
+
+p {margin-left: 2.0em; text-align: justify; margin-right:3em}
+
+table {margin-left: 2em; align=center; border=1; margin-right:3em}
+
+td.bigger { font-size: 200% }
