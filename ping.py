@@ -80,7 +80,10 @@ Send one ICMP ECHO_REQUEST and receive the response until self.timeout
             reqlist.append(req)
 
         for req in reqlist:
-            req.send(self.socket)
+            try:
+                req.send(self.socket)
+            except socket.error as e:
+                print "Socket error:", str(e), "-- scontinuing anyway"
 
         stopTime = time.time() + self.timeout
                 
@@ -142,6 +145,8 @@ def doPing(args):
 
     toDo = [ socket.inet_ntoa(struct.pack("!L", ip)) 
                    for ip in range(firstIp, lastIp+1) ]
+
+    toDo += [ socket.gethostbyname(n) for n in site_config.extra_ips ]
 
     missing = []
     contacted = []

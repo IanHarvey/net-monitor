@@ -4,13 +4,17 @@
 first_ip = "192.168.1.1"
 last_ip = "192.168.1.254"
 
+# Any external IP addresses you want to test
+
+extra_ips = [ '8.8.8.8' ]
+
 # IP addresses to be identified by name in the output
 # This will generally need to include the local host,
 # as it won't turn up in the ARP cache.
 known_ips = {
-
  # EXAMPLE DATA: you *will* need to change this
- "192.168.1.146" : "raspberrypi"
+ "8.8.8.8" : "Google DNS",
+ "192.168.1.146" : "raspberrypi",
 }
 
 # MAC addresses of devices to be identified by name

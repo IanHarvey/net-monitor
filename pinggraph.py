@@ -10,12 +10,19 @@ import sys
 import os
 import time
 import glob
+import pickle
 import site_config
 
-from mkgraph import StdColors, Graph, TimeGraph, TimeSeries
+from mkgraph import StdColors, Graph, TimeGraph, TimeSeries, LinearYAxis, LogYAxis
 
+def getTargetName(ip,mac,default=None):
+    if ip in site_config.known_ips:
+        return site_config.known_ips[ip]
+    if mac in site_config.known_macs:
+        return site_config.known_macs[mac]
+    return default
       
-def getDataSeries(inputFile):
+def getDataSeries(inputFile, lastSeen):
     allTargets = {}
     with open(inputFile, "r") as infile:
         for line in infile:
@@ -26,6 +33,10 @@ def getDataSeries(inputFile):
                 series = TimeSeries()
                 allTargets[target] = series
             series.addPoint(timestr, delay)
+            name = getTargetName(ip,mac)
+            if name != None:
+                # Assume last one is at end of file!
+                lastSeen[name]=timestr
     return allTargets
     
 
@@ -33,8 +44,8 @@ def getDataSeries(inputFile):
 def writeGraph(target, series, outputFile):
     font = site_config.graph_font
 
-    graph = ( TimeGraph( yUnits=40, yPixPerUnit=5 )
-              .hasOrigin(40, 220)
+    graph = ( TimeGraph( yAxis=LogYAxis(maxVal=1000.0, yPixPerDecade=50) )
+              .hasOrigin(45, 220)
               .hasColors( StdColors )
               .hasStdDrawObject(640, 240)
               .hasTrueTypeFont( font, size=10 )
@@ -47,26 +58,62 @@ def writeGraph(target, series, outputFile):
               
     print "Wrote", outputFile
 
+def cmpCaseless(first, second):
+    return cmp(first.lower(), second.lower())
 
-def writeHtmlPage( filename, outlist ):
+def lastSeenColour(name, lastSeen):
+    if name not in lastSeen:
+        return '"red"'
+    gap = time.time() - time.mktime(lastSeen[name])
+    if gap < 300.0:
+        return '"green"'
+    elif gap < 7200.0:
+        return '"olive"'
+    elif gap < 86500.0:
+        return '"darkorange"'
+    else:
+        return '"red"'
+
+def writeHtmlPage( filename, outlist, lastSeen ):
     print "Writing page", filename
     lines = [
         "<!DOCTYPE html>",
         "<html>",
-        "<head><title>Beagleboard Network Survey</title>",
+        "<head><title>" + site_config.page_title + "</title>",
         site_config.stylesheet,
         "</head>",
         "<body>",
     ]
-   
+
+    lines += [
+        '<h2>Last seen</h2>',
+        '<table>'
+        ]
+    names = lastSeen.keys()
+    names.sort(cmpCaseless)
+    # Arrange into two columns
+    fmt = "%H:%M:%S %d-%b-%y"
+    cols = [ "<td>%s</td> <td bgcolor=%s>&nbsp; %s &nbsp;</td>" % 
+            (name, lastSeenColour(name, lastSeen),
+            time.strftime(fmt, lastSeen[name])) for name in names ]
+
+    nrows = (len(cols)+1) / 2
+    if len(cols) < 2*nrows:
+        cols += [ "<td> </td> <td> </td>" ]
+                
+    for i in range(nrows):
+        lines += [
+            "<tr>",
+             cols[i],
+             cols[nrows+i],
+            "</tr>"
+        ]
+    lines += [ "</table>" ]
+
+    
     for (target, fname) in outlist:
         (ip,mac) = target.split("/")
-        if ip in site_config.known_ips:
-            name = site_config.known_ips[ip]
-        elif mac in site_config.known_macs:
-            name = site_config.known_macs[mac]
-        else:
-            name = mac
+        name = getTargetName(ip,mac,default=mac)
         lines += [
             '<h2>%s (%s)</h2>' % (ip,name),
             '<p><img src="%s"></p>' % fname
@@ -89,9 +136,23 @@ def cmpByIp(first,second):
     nip1 = [ int(x) for x in ip1.split(".") ]
     nip2 = [ int(x) for x in ip2.split(".") ]
     return cmp( nip1 + [mac1], nip2 + [mac2] )
-    
+
+def updateLastSeen(seenToday, dateNow):
+    try:
+        with open(site_config.last_seen_file, "r") as f:
+            lastSeen = pickle.load(f)
+    except IOError as e:
+        print "Cannot load", site_config.last_seen_file, ", error is", str(e)
+        lastSeen = {}
+    for (name, timestr) in seenToday.iteritems():
+        lastSeen[name] = time.strptime( dateNow + timestr, "%Y%m%d%H%M%S" )
+    with open(site_config.last_seen_file, "w") as f:
+        pickle.dump(lastSeen, f)
+    print "Updated", site_config.last_seen_file
+    return lastSeen
+
 if __name__ == '__main__':
-    
+   
     while True:
         args = { 'date' : time.strftime("%Y%m%d") }
         inputFile = site_config.input_file % args
@@ -102,7 +163,8 @@ if __name__ == '__main__':
             continue
 
         print "Reading", inputFile
-        allData = getDataSeries(inputFile)
+        seenToday = {}
+        allData = getDataSeries(inputFile, seenToday)
         targets = allData.keys()
         targets.sort(cmpByIp)
         outlist = []
@@ -111,6 +173,7 @@ if __name__ == '__main__':
             target = targets[idx]
             writeGraph( target, allData[target], os.path.join(site_config.output_path,fname) )
             outlist += [ (target, fname) ]
-        writeHtmlPage( os.path.join(site_config.output_path, site_config.page_name), outlist )
-        time.sleep(120)
+        lastSeen = updateLastSeen(seenToday, args['date'])
+        writeHtmlPage( os.path.join(site_config.output_path, site_config.page_name), outlist, lastSeen )
+        time.sleep(site_config.graph_interval)
 

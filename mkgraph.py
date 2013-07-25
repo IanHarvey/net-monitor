@@ -4,6 +4,7 @@ import sys
 import os
 import time
 import glob
+import math
 import Image, ImageDraw, ImageFont
 import array
 
@@ -15,17 +16,92 @@ class StdColors:
     axes = (0, 0, 0)
     xgrid = (255, 255, 224)
     ygrid = (224, 224, 224)
+    yminor =(240, 240, 224)
     data1 = (64, 64, 128)
     data2 = (255, 64, 64)
     data3 = (64, 255, 64)
     title = (255, 0, 0)
 
-class Graph:
-    def __init__(self, xUnits=1, yUnits=1, xPixPerUnit=100, yPixPerUnit=100):
-        self.xUnits,       self.yUnits      = xUnits, yUnits
-        self.xPixPerUnit,  self.yPixPerUnit = xPixPerUnit, yPixPerUnit
-        self.xTotal = int(xUnits * xPixPerUnit)
+class LinearYAxis:
+    def __init__(self, yUnits=1, yPixPerUnit=100):
+        self.yUnits      = yUnits
+        self.yPixPerUnit = yPixPerUnit
         self.yTotal = int(yUnits * yPixPerUnit)
+    
+    def getHeight(self):
+        return self.yTotal
+
+    def yLabel(self, y):
+        '''This can be overridden in a subclass if needed'''
+        if ((y%10)==0):
+            return "%02d" % y
+        else:
+            return ""
+            
+    def scaleY(self, value):
+        return int ( self.yPixPerUnit * value )
+
+    def draw(self, graph):
+        # Axis itself
+        graph.draw.line( [ (graph.originX, graph.originY), (graph.originX, graph.originY-self.yTotal-1) ] , fill=graph.colors.axes)
+        # Axis ticks and labels
+        for i in range(0, self.yUnits+1):
+            x = graph.originX
+            y = graph.originY - (i*self.yPixPerUnit)
+            graph.draw.line( [ (x,y), (x-5, y) ], fill = graph.colors.axes )
+            graph.draw.text( (x-20, y-5), self.yLabel(i), fill = graph.colors.axes )
+            if (i != 0) and ( i % 10 ) == 0:
+                graph.draw.line( [ (x+1,y), (x+graph.xTotal, y) ], fill = graph.colors.ygrid ) 
+
+class LogYAxis:
+    def __init__(self, maxVal = 1.0, decades=4, yPixPerDecade=100, lowerMarginPix=5):
+        self.minVal       = maxVal / math.pow(10.0, decades)
+        self.lowerMargin  = lowerMarginPix
+        self.decades      = int(decades)
+        self.yPixPerDecade= yPixPerDecade
+        self.yTotal = int(decades * yPixPerDecade + lowerMarginPix)
+    
+    def getHeight(self):
+        return self.yTotal
+
+    def yLabel(self, y):
+        return "%.1f" % y
+            
+    def scaleY(self, value):
+        if (value < self.minVal):
+            return self.lowerMargin
+        else:
+            return self.lowerMargin + int( self.yPixPerDecade * math.log10(value/self.minVal) )
+
+    def draw(self, graph):
+        # Axis itself
+        graph.draw.line( [ (graph.originX, graph.originY), (graph.originX, graph.originY-self.yTotal-1) ] , fill=graph.colors.axes)
+        # Axis labels
+        for i in range(0, self.decades+1):
+            x = graph.originX
+            val = self.minVal * math.pow(10.0, i)
+            y = graph.originY - self.scaleY(val)
+            graph.draw.line( [ (x,y), (x-5, y) ], fill = graph.colors.axes )
+            graph.draw.text( (x-40, y-5), self.yLabel(val), fill = graph.colors.axes )
+            graph.draw.line( [ (x+1,y), (x+graph.xTotal, y) ], fill = graph.colors.ygrid ) 
+            # Axis ticks
+            if i < self.decades:
+                for j in range(2,10):
+                    y = graph.originY - self.scaleY(val * j)
+                    graph.draw.line( [ (x,y), (x+graph.xTotal, y) ], fill = graph.colors.yminor )
+                    graph.draw.line( [ (x,y), (x-5, y) ], fill = graph.colors.axes )
+        
+class Graph:
+    def __init__(self, xUnits=1, xPixPerUnit=100, yAxis = None):
+        self.xUnits      = xUnits
+        self.xPixPerUnit = xPixPerUnit
+        self.xTotal = int(xUnits * xPixPerUnit)
+
+        if yAxis != None:
+            self.yAxis = yAxis
+        else:
+            self.yAxis = LinearYAxis()
+            
         self.colors = StdColors
 
     def hasOrigin(self, x, y):
@@ -62,11 +138,8 @@ class Graph:
         '''Typically overridden in a subclass, to get different label style'''
         return str(x)
 
-    def yLabel (self, y):
-        '''Typically overridden in a subclass, to get different label style'''
-        return str(y)
-    
     def drawXAxis(self):
+        yTotal = self.yAxis.getHeight()
         # Axis itself
         self.draw.line( [ (self.originX, self.originY), (self.originX+self.xTotal+1, self.originY) ] , fill=self.colors.axes)
         # Axis ticks and labels
@@ -76,23 +149,11 @@ class Graph:
             self.draw.line( [ (x,y), (x, y+5) ], fill = self.colors.axes )
             self.draw.text( (x-10, y+7), self.xLabel(i), fill = self.colors.axes )
             if (i != 0) and ( i % 10 ) == 0:
-                self.draw.line( [ (x,y-1), (x, y-self.yTotal) ], fill = self.colors.xgrid ) 
+                self.draw.line( [ (x,y-1), (x, y-yTotal) ], fill = self.colors.xgrid ) 
             
-    def drawYAxis(self):
-        # Axis itself
-        self.draw.line( [ (self.originX, self.originY), (self.originX, self.originY-self.yTotal-1) ] , fill=self.colors.axes)
-        # Axis ticks and labels
-        for i in range(0, self.yUnits+1):
-            x = self.originX
-            y = self.originY - (i*self.yPixPerUnit)
-            self.draw.line( [ (x,y), (x-5, y) ], fill = self.colors.axes )
-            self.draw.text( (x-20, y-5), self.yLabel(i), fill = self.colors.axes )
-            if (i != 0) and ( i % 10 ) == 0:
-                self.draw.line( [ (x+1,y), (x+self.xTotal, y) ], fill = self.colors.ygrid ) 
-
     def drawAxes(self):
         self.drawXAxis()
-        self.drawYAxis()
+        self.yAxis.draw(self)
         return self
         
     def drawTitle(self):
@@ -107,11 +168,12 @@ class Graph:
             
 
     def drawDataAsLine(self, color):
+        yTotal = self.yAxis.getHeight()
         points = []
         for (pX,pY) in self.generateData():
             if pY != None:
-                if pY > self.yTotal:
-                    pY = self.yTotal
+                if pY > yTotal:
+                    pY = yTotal
                 points.append( (self.originX+pX, self.originY-pY) )
             elif len(points) > 0:
                 self.draw.line(points, fill=color)
@@ -146,19 +208,13 @@ class TimeSeries:
         self.totals[timeIndex] += float(datum)
                 
 class TimeGraph(Graph):
-    def __init__(self, xUnits=24, yUnits=1, xPixPerUnit=22, yPixPerUnit=100):
-        Graph.__init__(self, xUnits, yUnits, xPixPerUnit, yPixPerUnit)
+    def __init__(self, xUnits=24, xPixPerUnit=22, yAxis=None):
+        Graph.__init__(self, xUnits, xPixPerUnit, yAxis)
         self.plotSeries=[]
         
     def xLabel(self, x):
         if ((x%2)==0):
             return "%2d00" % x
-        else:
-            return ""
-
-    def yLabel(self, y):
-        if ((y%10)==0):
-            return "%02d" % y
         else:
             return ""
 
@@ -177,5 +233,5 @@ class TimeGraph(Graph):
             if s.counts[pX]==0:
                 yield (pX, None)
             else:
-                yield (pX, int ( self.yPixPerUnit * s.totals[pX] / s.counts[pX] ) )
+                yield (pX, self.yAxis.scaleY(s.totals[pX] / s.counts[pX]))
 
